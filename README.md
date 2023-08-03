@@ -4,3 +4,7 @@ This repository is designed to showcase how someone may attempt to predict offen
 Using the nflfastR package, a step-by-step guide is provided for building the predictive models. This guide goes through exploratory data analysis, model building, and model use.
 ## Web app
 Using the prediction model, an R Shiny web app is built. The web app allows users to input a goal-to-go scenario, subsequently returning the predictive probability of the play call being a run or pass. Additionally, an interactive report can be generated from the web app, allowing stakeholders to have a succinct "cheat sheet" for play call probability prediction of the opposing offense.
+## Thanks
+A big thank you to the authors and maintainers of the nflfastR package for creating such an incredible resource!
+
+Carl S, Baldwin B (2023). nflfastR: Functions to Efficiently Access NFL Play by Play Data. https://www.nflfastr.com/, https://github.com/nflverse/nflfastR.
