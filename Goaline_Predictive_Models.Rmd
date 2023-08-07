@@ -4,13 +4,12 @@ author: "Jake Slaton"
 output:
         html_document:
                 toc: true
-                toc_float:
-                        collapsed: true
+                toc_float: true
                 toc_depth: 4
                 number_sections: false
 ---
 
-__Scenario:__ the team is heading into Week 15 and making a push for the playoffs. The defensive coordinator is looking to fortify his play calling in goal-to-go situations. He requests some analyses on the probability of a given play being either a run or a pass, so that he may be able to best prepare his defense in practice and fine-tune his game plan.
+__Scenario:__ the team is heading into Week 18 and making a push for the playoffs. The defensive coordinator is looking to fortify his play calling in goal-to-go situations. He requests some analyses on the probability of a given play being either a run or a pass, so that he may be able to best prepare his defense in practice and fine-tune his game plan.
 
 
 ```{r setup}
@@ -51,25 +50,23 @@ goal_offense <- pbp_raw %>%
                week)
 
 
-## For this scenario, I am pretending we have only completed 14 weeks of the 2022
+## For this scenario, I am pretending we have only completed 17 weeks of the 2022
 ## season.
-goal_offense_wk_14 <- goal_offense %>% 
-        filter(week <= 14)
+goal_offense_wk_17 <- goal_offense %>% 
+        filter(week <= 17)
 
 total_run_epa <- pbp_raw %>%
         filter(play_type %in% c("run"),
                !is.na(epa),
-               week <= 14) %>% 
+               week <= 17) %>% 
         group_by(posteam) %>%
         summarize(szn_epa = sum(epa)) %>% arrange((szn_epa))
 
-goal_offense_wk_14 <- goal_offense_wk_14 %>% 
+goal_offense_wk_17 <- goal_offense_wk_17 %>% 
         left_join(x = ., y = total_run_epa, by = "posteam")
 
 
 ```
-
-# Analyses {.tabset}
 
 ## League Analysis {.tabset}
 
@@ -79,7 +76,7 @@ After querying the necessary data, a good start would be to perform an explorato
 
 ```{r league-eda}
 ## Calculate play call proportions conditional on the down
-play_proportions <- goal_offense_wk_14 %>% 
+play_proportions <- goal_offense_wk_17 %>% 
         group_by(down, play_type) %>% 
         summarize(n = n()) %>% 
         pivot_wider(names_from = play_type, values_from = n) %>% 
@@ -110,7 +107,7 @@ As may be assumed, during the 2022 season the proportion of pass plays called in
 ```{r league-glm-plot}
 ## Create a scatter plot with a logistic regression curve to display pass
 ## probability vs. LOS
-goal_offense_wk_14 %>% 
+goal_offense_wk_17 %>% 
         ggplot(aes(x = yardline_100, y = as.numeric(pass)-1)) +
         geom_point(color = "blue4") +
         geom_smooth(method = "glm",
@@ -128,7 +125,7 @@ As may be expected, the probability of the play being a pass increases as the li
 ```{r league-glm-plot-downs}
 ## Create a scatter plot with a logistic regression curve to display pass
 ## probability vs. LOS conditioned on down
-goal_offense_wk_14 %>% 
+goal_offense_wk_17 %>% 
         ggplot(aes(x = yardline_100, y = as.numeric(pass)-1)) +
         geom_point(color = "blue4") +
         geom_smooth(method = "glm",
@@ -153,13 +150,13 @@ Now that the data has been explored and a direction provided, statistical modeli
 
 ## Random sample of observations (rows) to use for training data
 train_obs <- sample(
-        x = 1:nrow(goal_offense_wk_14),
-        size = round(nrow(goal_offense_wk_14)*0.8)
+        x = 1:nrow(goal_offense_wk_17),
+        size = round(nrow(goal_offense_wk_17)*0.8)
 )
 
 ## Create train/test data frames
-train_dat <- goal_offense_wk_14[train_obs,]
-test_dat <- goal_offense_wk_14[-train_obs,]
+train_dat <- goal_offense_wk_17[train_obs,]
+test_dat <- goal_offense_wk_17[-train_obs,]
 
 ## Build logistic regression model
 ## Include an interaction for yard line and down based on EDA
@@ -202,7 +199,7 @@ First step is to explore the data, similar to the League Analysis, except this t
 
 ```{r team-eda}
 ## Bar plot to visualize play call proportions for a handful of teams
-goal_offense_wk_14 %>% 
+goal_offense_wk_17 %>% 
         filter(posteam %in% c("IND", "HOU", "ARI", "BUF", "PHI", "KC")) %>%
         group_by(posteam, down, play_type) %>% 
         summarize(n = n()) %>% 
@@ -232,7 +229,7 @@ Taking the bottom three and top three teams in EPA/play, it is evident that ther
 
 ```{r team-glm-plot}
 ## GLM plot with the regression lines conditional on team
-goal_offense_wk_14 %>% 
+goal_offense_wk_17 %>% 
         filter(posteam %in% c("IND", "HOU", "ARI", "BUF", "PHI", "KC")) %>% 
         ggplot(aes(x = yardline_100, y = as.numeric(pass)-1)) +
         geom_point(color = "blue4") +
@@ -249,7 +246,7 @@ goal_offense_wk_14 %>%
 Each of the teams have regression lines that are vastly different. This indicates that the probability of calling a pass or run dependent on the line of scrimmage differ from team to team. The regression lines also are likely to differ by down
 
 ```{r team-glm-plot-downs}
-goal_offense_wk_14 %>% 
+goal_offense_wk_17 %>% 
         filter(posteam %in% c("IND", "HOU", "ARI", "BUF", "PHI", "KC")) %>% 
         ggplot(aes(x = yardline_100, y = as.numeric(pass)-1)) +
         geom_point(color = "blue4") +
@@ -265,7 +262,7 @@ goal_offense_wk_14 %>%
 
 ```
 
-Each team's regression line for the relationship of line of scrimmage and play call probability differ depending on the down. Note: some teams either have complete separation (HOU 3rd down) or only called one type of play call (ARI 3rd down). This would be an issue if building a regression model for an individual team, however, that is not the route that will be taken.
+Each team's regression line for the relationship of line of scrimmage and play call probability differ depending on the down. Note: some teams either have complete separation (IND 3rd down) or only called one type of play call (ARI 3rd down). This would be an issue if building a regression model for an individual team, however, that is not the route that will be taken.
 
 ### Model Building
 
@@ -308,7 +305,7 @@ The AUC for the multilevel model is greater than 0.7, so it is still performing 
 
 The multilevel logistic model seems to be an improvement from the simple logistic model; this is largely due to the slope coefficient varying by team, thereby providing a team-by-team approach. As of now, the model only has individual-level predictors, the down and the line of scrimmage (yardline_100). A potential improvement to the model would be the addition of a _group-level_ predictor that can explain some of the between-team variance. It would make sense that teams with a greater run EPA would be less likely to pass the ball compared to teams with a lower run EPA, therefore we will use Total Run EPA as a group-level predictor.
 
-```{r}
+```{r mlm-grp-predvar}
 ## Multilevel model with varying slopes and a group-level predictor term: total
 ## run EPA
 grp_lvl_variable <- stan_glmer(pass ~ yardline_100 + down + yardline_100:down + szn_epa + (1|posteam),
@@ -386,7 +383,7 @@ pred_2nd_6_mlm %>%
 
 Allowing the model intercept to vary by team, it can be seen that the median probability of a pass play is different with the simple logistic model prediction at `r round(median(pred_2nd_6),3)*100`% and the multilevel logistic model prediction at `r round(median(pred_2nd_6_mlm),3)*100`%. This seems intuitive given the Philadelphia Eagles are a run heavy offense. The standard error of the posterior predictions is greater for the multilevel model, due to the variance around Philadelphia's intercept error term, at `r round(mad(pred_2nd_6_mlm),3)*100`%; conversely, the standard error of the posterior predictions from the simple logistic model is `r round(mad(pred_2nd_6),3)*100`%. Nonetheless, the greater standard error is a trade off for a prediction estimate that is specific to the team.
 
-```{r}
+```{r ppd-comp}
 predictions <- tibble(`Logistic Regression` = pred_2nd_6[,1],
                       `MLM Logistic Regression` = pred_2nd_6_mlm[,1])
 
