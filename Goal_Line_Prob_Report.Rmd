@@ -1,0 +1,246 @@
+---
+title: "Goal Line Report"
+author: "Jake Slaton"
+date: "`r Sys.Date()`"
+output: html_document
+params:
+        team:
+                label: "Team"
+                value: "ARI"
+                input: select
+                choices: ["ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE",
+                "DAL", "DEN", "DET", "GB", "HOU", "IND", "JAX", "KC", "LA", "LAC",
+                "LV", "MIA", "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT",
+                "SEA", "SF", "TB", "TEN", "WAS"]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE)
+
+
+library(tidyverse)
+library(nflfastR)
+library(rstanarm)
+library(reactable)
+
+```
+
+
+```{r data-wrangling}
+## 2022 NFL play-by-play data
+pbp_raw <- load_pbp(2022)
+
+## Team logo
+team_logo <- teams_colors_logos %>% 
+        filter(team_abbr == params$team) %>% 
+        select(team_name, team_logo_espn)
+
+## Data frame for goal-to-go data
+## Removed 4th down since primary focus is predicting offensive play calls
+## Will create new binary variable, 'pass', where a 1 = pass; 0 = run
+goal_offense <- pbp_raw %>% 
+        filter(!is.na(goal_to_go),
+               !is.na(yardline_100),
+               !is.na(play_type),
+               goal_to_go > 0,
+               down < 4,
+               play_type %in% c("pass", "run")) %>% 
+        mutate(down = as.factor(down),
+               pass = as.factor(ifelse(play_type == "pass", 1, 0))) %>% 
+        select(posteam,
+               week,
+               pass,
+               goal_to_go,
+               yardline_100,
+               down,
+               play_type,
+               defteam,
+               week)
+
+
+## For this scenario, I am pretending we have only completed 17 weeks of the 2022
+## season.
+goal_offense_wk_17 <- goal_offense %>% 
+        filter(week <= 17)
+
+## Total run EPA after Week 17
+total_run_epa <- pbp_raw %>%
+        filter(play_type %in% c("run"),
+               !is.na(epa),
+               week <= 17) %>% 
+        group_by(posteam) %>%
+        summarize(szn_epa = sum(epa)) %>% arrange((szn_epa))
+
+## Join total run EPA to main data frame
+goal_offense_wk_17 <- goal_offense_wk_17 %>% 
+        left_join(x = ., y = total_run_epa, by = "posteam")
+```
+
+![](`r team_logo$team_logo_espn`){width=150px}
+
+<br>
+
+Guide to goal line play call probabilities for the `r team_logo$team_name`
+
+```{r model, include=FALSE}
+## Multilevel logistic regression model
+grp_lvl_variable <- stan_glmer(
+        pass ~ yardline_100 + down + yardline_100:down + szn_epa + (1|posteam),
+        data = goal_offense_wk_17,
+        family = binomial(link = "logit"),
+        iter = 5000
+)
+```
+
+
+```{r ppd}
+## Extract total run EPA for team of interest
+run_epa <- goal_offense_wk_17 %>% 
+        filter(posteam == params$team) %>% 
+        pull(szn_epa) %>% 
+        unique()
+
+## New data frame to use for prediction
+## Create one for each down
+new_data_1st <- data.frame(
+        posteam = params$team,
+        down = "1",
+        yardline_100 = 1:15,
+        szn_epa = run_epa)
+
+new_data_2nd <- data.frame(
+        posteam = params$team,
+        down = "2",
+        yardline_100 = 1:15,
+        szn_epa = run_epa)
+
+new_data_3rd <- data.frame(
+        posteam = params$team,
+        down = "3",
+        yardline_100 = 1:15,
+        szn_epa = run_epa)
+
+## Create posterior prediction distribution for each down
+ppd_1st <- posterior_epred(grp_lvl_variable,
+                       newdata = new_data_1st)
+
+ppd_2nd <- posterior_epred(grp_lvl_variable,
+                       newdata = new_data_2nd)
+
+ppd_3rd <- posterior_epred(grp_lvl_variable,
+                       newdata = new_data_3rd)
+
+
+
+## Turn PPDs into a data frame
+ppd_1st <- as_tibble(ppd_1st)
+ppd_2nd <- as_tibble(ppd_2nd)
+ppd_3rd <- as_tibble(ppd_3rd)
+
+## Medians
+median_ppd_1st <- round(apply(ppd_1st, 2, median)*100)
+median_ppd_2nd <- round(apply(ppd_2nd, 2, median)*100)
+median_ppd_3rd <- round(apply(ppd_3rd, 2, median)*100)
+
+## Standard errors
+se_ppd_1st <- round(apply(ppd_1st, 2, mad)*100)
+se_ppd_2nd <- round(apply(ppd_2nd, 2, mad)*100)
+se_ppd_3rd <- round(apply(ppd_3rd, 2, mad)*100)
+
+## 95% credible interval
+hdi_ppd_1st <- round(apply(ppd_1st, 2, HDInterval::hdi)*100)
+hdi_ppd_2nd <- round(apply(ppd_2nd, 2, HDInterval::hdi)*100)
+hdi_ppd_3rd <- round(apply(ppd_3rd, 2, HDInterval::hdi)*100)
+
+```
+
+## 1st Down
+
+```{r first-down}
+ppd_1st <- tibble(los = 1:15,
+                  pass_prob = median_ppd_1st,
+                  pass_hdi_95 = paste0("[",
+                                  hdi_ppd_1st[1,1:15],
+                                  ", ",
+                                  hdi_ppd_1st[2, 1:15],
+                                  "]"),
+                  run_prob = 100-median_ppd_1st,
+                  run_hdi_95 = paste0("[",
+                                  100 - hdi_ppd_1st[2,1:15],
+                                  ", ",
+                                  100-hdi_ppd_1st[1,1:15],
+                                  "]"))
+
+reactable(ppd_1st,
+          columns = list(
+                  los = colDef(name = "LOS"),
+                  pass_prob = colDef(name = "Pass Probability"),
+                  pass_hdi_95 = colDef(name = "Pass Uncertainty"),
+                  run_prob = colDef(name = "Run Probability"),
+                  run_hdi_95 = colDef(name = "Run Uncertainty")
+          ),
+          striped = TRUE,
+          defaultPageSize = 15)
+```
+
+## 2nd Down
+
+```{r second-down}
+ppd_2nd <- tibble(los = 1:15,
+                  pass_prob = median_ppd_2nd,
+                  pass_hdi_95 = paste0("[",
+                                  hdi_ppd_2nd[1,1:15],
+                                  ", ",
+                                  hdi_ppd_2nd[2, 1:15],
+                                  "]"),
+                  run_prob = 100-median_ppd_2nd,
+                  run_hdi_95 = paste0("[",
+                                  100 - hdi_ppd_2nd[2,1:15],
+                                  ", ",
+                                  100-hdi_ppd_2nd[1,1:15],
+                                  "]"))
+
+reactable(ppd_2nd,
+          columns = list(
+                  los = colDef(name = "LOS"),
+                  pass_prob = colDef(name = "Pass Probability"),
+                  pass_hdi_95 = colDef(name = "Pass Uncertainty"),
+                  run_prob = colDef(name = "Run Probability"),
+                  run_hdi_95 = colDef(name = "Run Uncertainty")
+          ),
+          striped = TRUE,
+          defaultPageSize = 15)
+```
+
+## 3rd Down
+
+```{r third-down}
+ppd_3rd <- tibble(los = 1:15,
+                  pass_prob = median_ppd_3rd,
+                  pass_hdi_95 = paste0("[",
+                                  hdi_ppd_3rd[1,1:15],
+                                  ", ",
+                                  hdi_ppd_3rd[2, 1:15],
+                                  "]"),
+                  run_prob = 100-median_ppd_3rd,
+                  run_hdi_95 = paste0("[",
+                                  100 - hdi_ppd_3rd[2,1:15],
+                                  ", ",
+                                  100-hdi_ppd_3rd[1,1:15],
+                                  "]"))
+
+reactable(ppd_3rd,
+          columns = list(
+                  los = colDef(name = "LOS"),
+                  pass_prob = colDef(name = "Pass Probability"),
+                  pass_hdi_95 = colDef(name = "Pass Uncertainty"),
+                  run_prob = colDef(name = "Run Probability"),
+                  run_hdi_95 = colDef(name = "Run Uncertainty")
+          ),
+          striped = TRUE,
+          defaultPageSize = 15)
+```
+
+
